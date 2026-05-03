@@ -94,24 +94,16 @@ func cmdApply(args []string) error {
 	if len(models) == 0 {
 		return fmt.Errorf("no models discovered")
 	}
-	patches, envs, err := renderTargets(splitCSV(*targets), models)
+	patches, _, err := renderTargets(splitCSV(*targets), models)
 	if err != nil {
 		return err
 	}
 	if *dryRun {
 		printRenderedPatches(patches)
-		if len(envs) > 0 {
-			fmt.Println("### env")
-			printEnv(envs, "bash")
-		}
 		return nil
 	}
 	if err := applyPatches(patches, *backupDir, false); err != nil {
 		return err
-	}
-	if len(envs) > 0 {
-		fmt.Println("environment-only targets use environment variables; source these or use lmwire run:")
-		printEnv(envs, "bash")
 	}
 	return nil
 }

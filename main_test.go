@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +19,33 @@ func TestRunCLIEnvCommandRemoved(t *testing.T) {
 	err := runCLI([]string{"env"})
 	if err == nil || !strings.Contains(err.Error(), `unknown command "env"`) {
 		t.Fatalf("unexpected error %v", err)
+	}
+}
+
+func TestApplyEnvironmentOnlyTargetsProduceNoOutput(t *testing.T) {
+	patches, envs, err := renderTargets([]string{"claude", "copilot"}, []Model{{
+		ProviderID: "lmstudio",
+		ID:         "google/gemma-4-e4b",
+		Name:       "google/gemma-4-e4b",
+		BaseURL:    "http://localhost:1234/v1",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(patches) != 0 {
+		t.Fatalf("environment-only targets should not produce file patches: %#v", patches)
+	}
+	if len(envs) == 0 {
+		t.Fatal("expected environment variables for run")
+	}
+
+	out := captureStdout(t, func() {
+		if err := applyPatches(patches, "", false); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if out != "" {
+		t.Fatalf("environment-only apply printed output: %q", out)
 	}
 }
 
@@ -136,6 +164,31 @@ func TestProviderFromModelRef(t *testing.T) {
 	if got != "lmstudio" {
 		t.Fatalf("got %q", got)
 	}
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+	defer func() {
+		os.Stdout = old
+	}()
+	fn()
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
 }
 
 func TestPrepareAgentRunPiWritesSelectedModelConfig(t *testing.T) {

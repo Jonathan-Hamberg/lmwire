@@ -32,19 +32,19 @@ lmwire apply
 lmwire apply --target pi,codex,opencode,copilot
 ```
 
-The apply command preserves existing files and upserts `lmwire` managed entries. Use `--dry-run` to print the generated config and environment exports without writing. Existing files are backed up under `~/.lmwire/backups` before writes.
+The apply command preserves existing files and upserts `lmwire` managed entries. Use `--dry-run` to print the generated config without writing. Existing files are backed up under `~/.lmwire/backups` before writes.
 
 Target files:
 
 - Pi: `~/.pi/agent/models.json`
 - Codex: `~/.codex/config.toml`
 - OpenCode: `$XDG_CONFIG_HOME/opencode/opencode.json` or `~/.config/opencode/opencode.json`
-- Claude Code: environment variables only
-- Microsoft Copilot: environment variables only
+- Claude Code: environment variables only; use `lmwire run claude`
+- Microsoft Copilot: environment variables only; use `lmwire run copilot`
 
-Claude Code exports include `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY=""`, `ANTHROPIC_MODEL`, and custom model picker variables.
+Claude Code receives `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY=""`, `ANTHROPIC_MODEL`, and custom model picker variables from `lmwire run`.
 For LM Studio, `ANTHROPIC_BASE_URL` points at `http://localhost:1234` so Claude Code uses LM Studio's Anthropic-compatible `/v1/messages` endpoint.
-Microsoft Copilot exports include `COPILOT_PROVIDER_BASE_URL`, `COPILOT_PROVIDER_TYPE=openai`, `COPILOT_PROVIDER_API_KEY=""`, `COPILOT_PROVIDER_MODEL_ID`, and `COPILOT_PROVIDER_WIRE_MODEL`.
+Microsoft Copilot receives `COPILOT_PROVIDER_BASE_URL`, `COPILOT_PROVIDER_TYPE=openai`, `COPILOT_PROVIDER_API_KEY=""`, `COPILOT_PROVIDER_MODEL_ID`, and `COPILOT_PROVIDER_WIRE_MODEL` from `lmwire run`.
 
 ## Launch Agents
 
@@ -66,7 +66,7 @@ For Codex, LM Studio models use the loaded instance context length reported by `
 
 ## Safety Notes
 
-- `apply --dry-run` prints generated config and environment exports without changing files.
+- `apply --dry-run` prints generated config without changing files. It does not print or apply environment-only target variables.
 - Existing files are backed up before writes.
 - Codex uses custom provider IDs such as `lmwire_ollama` instead of reserved built-in provider IDs.
 - OpenCode JSONC comments are not preserved in this first implementation because the CLI uses Go's standard JSON parser.
