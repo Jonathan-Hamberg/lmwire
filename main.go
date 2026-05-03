@@ -27,12 +27,8 @@ func runCLI(args []string) error {
 	switch args[0] {
 	case "discover":
 		return cmdDiscover(args[1:])
-	case "render":
-		return cmdRender(args[1:])
 	case "apply":
 		return cmdApply(args[1:])
-	case "env":
-		return cmdEnv(args[1:])
 	case "run":
 		return cmdRun(args[1:])
 	case "help", "-h", "--help":
@@ -73,48 +69,6 @@ func cmdDiscover(args []string) error {
 	return nil
 }
 
-func cmdRender(args []string) error {
-	fs := flag.NewFlagSet("render", flag.ContinueOnError)
-	targets := fs.String("target", "", "comma-separated targets: pi,codex,claude,opencode")
-	providers := fs.String("provider", "", "comma-separated providers: ollama,lmstudio")
-	modelRef := fs.String("model", "", "model ref provider/model-id")
-	jsonOut := fs.Bool("json", false, "print JSON")
-	timeout := fs.Duration("timeout", 2*time.Second, "discovery timeout")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	models, errs := discoverModels(context.Background(), DiscoverOptions{
-		Providers: splitCSV(*providers),
-		Timeout:   *timeout,
-	})
-	models, err := filterModels(models, *modelRef)
-	if err != nil {
-		return err
-	}
-	patches, envs, err := renderTargets(splitCSV(*targets), models)
-	if err != nil {
-		return err
-	}
-	if *jsonOut {
-		return json.NewEncoder(os.Stdout).Encode(map[string]any{
-			"patches": patches,
-			"env":     envs,
-			"errors":  errorStrings(errs),
-		})
-	}
-	for _, patch := range patches {
-		fmt.Printf("### %s: %s\n%s\n", patch.TargetID, patch.Path, string(patch.After))
-	}
-	if len(envs) > 0 {
-		fmt.Println("### env")
-		printEnv(envs, "bash")
-	}
-	for _, err := range errs {
-		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
-	}
-	return nil
-}
-
 func cmdApply(args []string) error {
 	fs := flag.NewFlagSet("apply", flag.ContinueOnError)
 	targets := fs.String("target", "", "comma-separated targets: pi,codex,claude,opencode")
@@ -145,9 +99,9 @@ func cmdApply(args []string) error {
 		return err
 	}
 	if *dryRun {
-		printPatchSummary(patches)
+		printRenderedPatches(patches)
 		if len(envs) > 0 {
-			fmt.Println("environment exports:")
+			fmt.Println("### env")
 			printEnv(envs, "bash")
 		}
 		return nil
@@ -158,50 +112,6 @@ func cmdApply(args []string) error {
 	if len(envs) > 0 {
 		fmt.Println("claude uses environment variables; source these or use lmwire run claude:")
 		printEnv(envs, "bash")
-	}
-	return nil
-}
-
-func cmdEnv(args []string) error {
-	target := "claude"
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		target = args[0]
-		args = args[1:]
-	}
-	fs := flag.NewFlagSet("env", flag.ContinueOnError)
-	providers := fs.String("provider", "", "comma-separated providers: ollama,lmstudio")
-	modelRef := fs.String("model", "", "model ref provider/model-id")
-	shell := fs.String("shell", "bash", "shell format: bash,fish")
-	timeout := fs.Duration("timeout", 2*time.Second, "discovery timeout")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	models, errs := discoverModels(context.Background(), DiscoverOptions{
-		Providers: splitCSV(*providers),
-		Timeout:   *timeout,
-	})
-	for _, err := range errs {
-		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
-	}
-	models, err := filterModels(models, *modelRef)
-	if err != nil {
-		return err
-	}
-	if len(models) == 0 {
-		return fmt.Errorf("no models discovered")
-	}
-	switch target {
-	case "claude":
-		printEnv(renderClaudeEnv(pickDefaultModel(models)), *shell)
-	case "codex":
-		model := pickDefaultModel(models)
-		printEnv([]EnvVar{
-			{Name: "OPENAI_API_KEY", Value: "lmwire-local"},
-			{Name: "OPENAI_BASE_URL", Value: model.BaseURL},
-			{Name: "CODEX_OSS_BASE_URL", Value: model.BaseURL},
-		}, *shell)
-	default:
-		return fmt.Errorf("env target %q is not supported", target)
 	}
 	return nil
 }
@@ -456,13 +366,13 @@ func splitTrailingArgs(args []string) ([]string, []string) {
 	return args, nil
 }
 
-func printPatchSummary(patches []FilePatch) {
+func printRenderedPatches(patches []FilePatch) {
 	for _, patch := range patches {
 		if string(patch.Before) == string(patch.After) {
-			fmt.Printf("unchanged %s (%s)\n", patch.Path, patch.TargetID)
+			fmt.Printf("### %s: %s (unchanged)\n%s\n", patch.TargetID, patch.Path, string(patch.After))
 			continue
 		}
-		fmt.Printf("would write %s (%s): %d bytes -> %d bytes\n", patch.Path, patch.TargetID, len(patch.Before), len(patch.After))
+		fmt.Printf("### %s: %s\n%s\n", patch.TargetID, patch.Path, string(patch.After))
 	}
 }
 
@@ -501,9 +411,7 @@ func printUsage() {
 
 Usage:
   lmwire discover [--provider ollama,lmstudio] [--json]
-  lmwire render [--target pi,codex,claude,opencode] [--model provider/model]
   lmwire apply [--target pi,codex,claude,opencode] [--dry-run]
-  lmwire env [claude|codex] [--model provider/model] [--shell bash|fish]
   lmwire run <codex|claude|pi|opencode> [--model provider/model] -- [agent args...]
 
 `)

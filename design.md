@@ -37,23 +37,11 @@
   lmwire apply --dry-run
   lmwire apply --backup-dir ~/.lmwire/backups
 
-  # Show generated config without writing
-  lmwire render --target pi
-  lmwire render --target codex --provider lmstudio
-  lmwire render --target claude --model qwen2.5-coder:7b
-  lmwire render --format json
-
   # Launch an agent with local-model environment/config
   lmwire run codex --model ollama/qwen2.5-coder:7b
   lmwire run claude --model ollama/qwen3.5
   lmwire run pi --model lmstudio/qwen/qwen3-coder
   lmwire run opencode --model lmstudio/google/gemma-3n-e4b -- --help
-
-  # Emit shell exports for sourcing
-  lmwire env claude --model ollama/qwen3.5
-  lmwire env codex --model lmstudio/qwen/qwen3-coder
-  eval "$(lmwire env claude --model ollama/qwen3.5 --shell bash)"
-  lmwire env --shell fish
 
   Global flags:
 
@@ -133,7 +121,7 @@
   Claude Code:
 
   - Prefer env-based integration instead of config-file mutation.
-  - lmwire env claude emits:
+  - lmwire run claude injects:
       - ANTHROPIC_BASE_URL
       - ANTHROPIC_API_KEY
       - ANTHROPIC_MODEL
@@ -155,7 +143,7 @@
       - Ollama /api/tags.
       - LM Studio /v1/models.
       - normalized model list output.
-  3. Implement render/apply engine:
+  3. Implement apply engine:
       - load existing files,
       - generate target-specific desired config,
       - diff,
@@ -175,7 +163,7 @@
   ## Test Plan
 
   - Unit tests for Ollama and LM Studio discovery using httptest.
-  - Golden-file render tests for Pi JSON, Codex TOML, Claude env output, and OpenCode JSON.
+  - Golden-file generation tests for Pi JSON, Codex TOML, Claude env output, and OpenCode JSON.
   - Merge tests proving user-owned config fields survive apply.
   - Dry-run tests proving no files are written.
   - Backup/atomic-write tests.
@@ -188,4 +176,3 @@
   - Managed merge is safer than overwriting full agent configs.
   - HTTP discovery is preferred because both Ollama and LM Studio expose model-list endpoints.
   - Local model metadata will be incomplete; v1 will not infer tool-calling or reasoning quality beyond conservative compatibility defaults.
-

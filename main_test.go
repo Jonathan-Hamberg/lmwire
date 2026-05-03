@@ -7,6 +7,20 @@ import (
 	"testing"
 )
 
+func TestRunCLIRenderCommandRemoved(t *testing.T) {
+	err := runCLI([]string{"render"})
+	if err == nil || !strings.Contains(err.Error(), `unknown command "render"`) {
+		t.Fatalf("unexpected error %v", err)
+	}
+}
+
+func TestRunCLIEnvCommandRemoved(t *testing.T) {
+	err := runCLI([]string{"env"})
+	if err == nil || !strings.Contains(err.Error(), `unknown command "env"`) {
+		t.Fatalf("unexpected error %v", err)
+	}
+}
+
 func TestAgentCommandOpenCodeUsesProviderModelRefAndInlineConfig(t *testing.T) {
 	_, args, envs, err := agentCommand("opencode", Model{
 		ProviderID: "lmstudio",
