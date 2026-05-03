@@ -13,7 +13,7 @@ import (
 
 func renderTargets(targets []string, models []Model) ([]FilePatch, []EnvVar, error) {
 	if len(targets) == 0 {
-		targets = []string{"pi", "codex", "claude", "opencode"}
+		targets = []string{"pi", "codex", "claude", "opencode", "copilot"}
 	}
 	var patches []FilePatch
 	var envs []EnvVar
@@ -39,6 +39,8 @@ func renderTargets(targets []string, models []Model) ([]FilePatch, []EnvVar, err
 				return nil, nil, err
 			}
 			patches = append(patches, patch)
+		case "copilot", "microsoft-copilot":
+			envs = append(envs, renderCopilotEnv(pickDefaultModel(models))...)
 		case "":
 		default:
 			return nil, nil, fmt.Errorf("unknown target %q", target)
@@ -167,6 +169,27 @@ func renderClaudeEnv(model Model) []EnvVar {
 		{Name: "ANTHROPIC_CUSTOM_MODEL_OPTION_NAME", Value: model.Name},
 		{Name: "ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION", Value: model.ProviderID + " local model"},
 	}
+}
+
+func renderCopilotEnv(model Model) []EnvVar {
+	if model.ID == "" {
+		return nil
+	}
+	return []EnvVar{
+		{Name: "COPILOT_PROVIDER_BASE_URL", Value: model.BaseURL},
+		{Name: "COPILOT_PROVIDER_TYPE", Value: "openai"},
+		{Name: "COPILOT_PROVIDER_API_KEY", Value: ""},
+		{Name: "COPILOT_PROVIDER_MODEL_ID", Value: copilotProviderModelID(model.ID)},
+		{Name: "COPILOT_PROVIDER_WIRE_MODEL", Value: model.ID},
+	}
+}
+
+func copilotProviderModelID(modelID string) string {
+	_, id, ok := strings.Cut(modelID, "/")
+	if ok && id != "" {
+		modelID = id
+	}
+	return strings.ReplaceAll(modelID, ":", "-")
 }
 
 func renderOpenCode(models []Model) (FilePatch, error) {

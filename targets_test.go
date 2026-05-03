@@ -91,6 +91,71 @@ func TestRenderClaudeEnvStripsLMStudioOpenAIPath(t *testing.T) {
 	}
 }
 
+func TestRenderCopilotEnvKeepsOllamaOpenAIPath(t *testing.T) {
+	envs := renderCopilotEnv(Model{
+		ProviderID: "ollama",
+		ID:         "gpt-oss:20b",
+		Name:       "gpt-oss:20b",
+		BaseURL:    "http://localhost:11434/v1",
+	})
+	got := map[string]string{}
+	for _, env := range envs {
+		got[env.Name] = env.Value
+	}
+	if got["COPILOT_PROVIDER_BASE_URL"] != "http://localhost:11434/v1" {
+		t.Fatalf("unexpected base url %q", got["COPILOT_PROVIDER_BASE_URL"])
+	}
+	if got["COPILOT_PROVIDER_TYPE"] != "openai" {
+		t.Fatalf("unexpected provider type %q", got["COPILOT_PROVIDER_TYPE"])
+	}
+	if got["COPILOT_PROVIDER_API_KEY"] != "" {
+		t.Fatalf("unexpected api key %q", got["COPILOT_PROVIDER_API_KEY"])
+	}
+	if got["COPILOT_PROVIDER_MODEL_ID"] != "gpt-oss-20b" {
+		t.Fatalf("unexpected model id %q", got["COPILOT_PROVIDER_MODEL_ID"])
+	}
+	if got["COPILOT_PROVIDER_WIRE_MODEL"] != "gpt-oss:20b" {
+		t.Fatalf("unexpected wire model %q", got["COPILOT_PROVIDER_WIRE_MODEL"])
+	}
+}
+
+func TestRenderCopilotEnvKeepsLMStudioOpenAIPath(t *testing.T) {
+	envs := renderCopilotEnv(Model{
+		ProviderID: "lmstudio",
+		ID:         "openai/gpt-oss-20b",
+		Name:       "openai/gpt-oss-20b",
+		BaseURL:    "http://localhost:1234/v1",
+	})
+	got := map[string]string{}
+	for _, env := range envs {
+		got[env.Name] = env.Value
+	}
+	if got["COPILOT_PROVIDER_BASE_URL"] != "http://localhost:1234/v1" {
+		t.Fatalf("unexpected base url %q", got["COPILOT_PROVIDER_BASE_URL"])
+	}
+	if got["COPILOT_PROVIDER_MODEL_ID"] != "gpt-oss-20b" {
+		t.Fatalf("unexpected model id %q", got["COPILOT_PROVIDER_MODEL_ID"])
+	}
+	if got["COPILOT_PROVIDER_WIRE_MODEL"] != "openai/gpt-oss-20b" {
+		t.Fatalf("unexpected wire model %q", got["COPILOT_PROVIDER_WIRE_MODEL"])
+	}
+}
+
+func TestCopilotProviderModelID(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want string
+	}{
+		{"gpt-oss:20b", "gpt-oss-20b"},
+		{"openai/gpt-oss-20b", "gpt-oss-20b"},
+		{"qwen2.5-coder:7b", "qwen2.5-coder-7b"},
+	} {
+		if got := copilotProviderModelID(tc.in); got != tc.want {
+			t.Fatalf("copilotProviderModelID(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestSanitizeID(t *testing.T) {
 	got := sanitizeID("ollama_qwen2.5-coder:7b")
 	want := "ollama_qwen2_5_coder_7b"

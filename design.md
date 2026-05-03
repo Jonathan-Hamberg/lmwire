@@ -2,7 +2,7 @@
 
   ## Summary
 
-  Build lmwire, a Go CLI that discovers local model servers and writes managed config for Pi, Codex, Claude Code, and OpenCode so local Ollama and LM Studio models are selectable and
+  Build lmwire, a Go CLI that discovers local model servers and writes managed config for Pi, Codex, Claude Code, OpenCode, and Microsoft Copilot so local Ollama and LM Studio models are selectable and
   launchable from agent TUIs.
 
   Chosen v1 defaults:
@@ -10,7 +10,7 @@
   - Use HTTP discovery first.
   - Preserve user config and upsert only lmwire-managed entries.
   - Create backups before every write.
-  - Support all four targets: Pi, Codex, Claude Code, OpenCode.
+  - Support all five targets: Pi, Codex, Claude Code, OpenCode, Microsoft Copilot.
 
   Docs referenced:
 
@@ -19,6 +19,7 @@
   - Claude Code env vars: https://code.claude.com/docs/en/env-vars
   - Ollama Claude Code integration: https://docs.ollama.com/integrations/claude-code
   - OpenCode models: https://opencode.ai/docs/models/
+  - GitHub Copilot CLI BYOK models: https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/use-byok-models
   - Ollama list models: https://docs.ollama.com/api/tags
   - LM Studio OpenAI-compatible models: https://lmstudio.ai/docs/developer/openai-compat/models
 
@@ -32,7 +33,7 @@
 
   # Write managed config to all supported agents
   lmwire apply
-  lmwire apply --target pi,codex,claude,opencode
+  lmwire apply --target pi,codex,claude,opencode,copilot
   lmwire apply --provider ollama,lmstudio
   lmwire apply --dry-run
   lmwire apply --backup-dir ~/.lmwire/backups
@@ -42,12 +43,13 @@
   lmwire run claude --model ollama/qwen3.5
   lmwire run pi --model lmstudio/qwen/qwen3-coder
   lmwire run opencode --model lmstudio/google/gemma-3n-e4b -- --help
+  lmwire run copilot --model ollama/gpt-oss:20b
 
   Global flags:
 
   --config ~/.config/lmwire/config.toml
   --provider ollama,lmstudio
-  --target pi,codex,claude,opencode
+  --target pi,codex,claude,opencode,copilot
   --model <provider>/<model-id>
   --dry-run
   --json
@@ -135,6 +137,16 @@
   - Use model references as provider_id/model_id.
   - Preserve existing provider config and only upsert lmwire providers/models.
 
+  Microsoft Copilot:
+
+  - Prefer BYOK environment variables instead of config-file mutation.
+  - lmwire run copilot injects:
+      - COPILOT_PROVIDER_BASE_URL
+      - COPILOT_PROVIDER_TYPE=openai
+      - COPILOT_PROVIDER_API_KEY
+      - COPILOT_PROVIDER_MODEL_ID
+      - COPILOT_PROVIDER_WIRE_MODEL
+
   ## Implementation Plan
 
   1. Scaffold Go module with Cobra CLI, internal packages for provider, target, configio, and cmd.
@@ -149,7 +161,7 @@
       - diff,
       - backup,
       - atomic write.
-  4. Implement target adapters for Pi, Codex, Claude Code env, and OpenCode.
+  4. Implement target adapters for Pi, Codex, Claude Code env, OpenCode, and Microsoft Copilot env.
   5. Implement run:
       - resolve model,
       - prepare env/config,

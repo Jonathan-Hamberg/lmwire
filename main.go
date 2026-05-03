@@ -71,7 +71,7 @@ func cmdDiscover(args []string) error {
 
 func cmdApply(args []string) error {
 	fs := flag.NewFlagSet("apply", flag.ContinueOnError)
-	targets := fs.String("target", "", "comma-separated targets: pi,codex,claude,opencode")
+	targets := fs.String("target", "", "comma-separated targets: pi,codex,claude,opencode,copilot")
 	providers := fs.String("provider", "", "comma-separated providers: ollama,lmstudio")
 	modelRef := fs.String("model", "", "model ref provider/model-id")
 	dryRun := fs.Bool("dry-run", false, "show writes without changing files")
@@ -110,7 +110,7 @@ func cmdApply(args []string) error {
 		return err
 	}
 	if len(envs) > 0 {
-		fmt.Println("claude uses environment variables; source these or use lmwire run claude:")
+		fmt.Println("environment-only targets use environment variables; source these or use lmwire run:")
 		printEnv(envs, "bash")
 	}
 	return nil
@@ -118,7 +118,7 @@ func cmdApply(args []string) error {
 
 func cmdRun(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("run requires an agent: codex, claude, pi, opencode")
+		return fmt.Errorf("run requires an agent: codex, claude, pi, opencode, copilot")
 	}
 	agent := args[0]
 	rest := args[1:]
@@ -250,6 +250,10 @@ func agentCommand(agent string, model Model, args []string) (string, []string, [
 		cmdName = "opencode"
 		cmdArgs = append([]string{"--model", openCodeModelRef(model)}, args...)
 		envVars = append(envVars, EnvVar{Name: "OPENCODE_CONFIG_CONTENT", Value: openCodeInlineConfig(model)})
+	case "copilot", "microsoft-copilot":
+		cmdName = "copilot"
+		cmdArgs = args
+		envVars = renderCopilotEnv(model)
 	default:
 		return "", nil, nil, fmt.Errorf("unknown agent %q", agent)
 	}
@@ -411,8 +415,8 @@ func printUsage() {
 
 Usage:
   lmwire discover [--provider ollama,lmstudio] [--json]
-  lmwire apply [--target pi,codex,claude,opencode] [--dry-run]
-  lmwire run <codex|claude|pi|opencode> [--model provider/model] -- [agent args...]
+  lmwire apply [--target pi,codex,claude,opencode,copilot] [--dry-run]
+  lmwire run <codex|claude|pi|opencode|copilot> [--model provider/model] -- [agent args...]
 
 `)
 }

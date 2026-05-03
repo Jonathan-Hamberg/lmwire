@@ -69,6 +69,55 @@ func TestAgentCommandClaudePassesModelFlag(t *testing.T) {
 	}
 }
 
+func TestAgentCommandCopilotUsesBYOKEnv(t *testing.T) {
+	cmd, args, envs, err := agentCommand("copilot", Model{
+		ProviderID: "ollama",
+		ID:         "gpt-oss:20b",
+		Name:       "gpt-oss:20b",
+		BaseURL:    "http://localhost:11434/v1",
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cmd != "copilot" {
+		t.Fatalf("unexpected command %q", cmd)
+	}
+	if len(args) != 0 {
+		t.Fatalf("unexpected args %#v", args)
+	}
+	got := map[string]string{}
+	for _, env := range envs {
+		got[env.Name] = env.Value
+	}
+	if got["COPILOT_PROVIDER_BASE_URL"] != "http://localhost:11434/v1" {
+		t.Fatalf("unexpected base url %q", got["COPILOT_PROVIDER_BASE_URL"])
+	}
+	if got["COPILOT_PROVIDER_TYPE"] != "openai" {
+		t.Fatalf("unexpected provider type %q", got["COPILOT_PROVIDER_TYPE"])
+	}
+	if got["COPILOT_PROVIDER_MODEL_ID"] != "gpt-oss-20b" {
+		t.Fatalf("unexpected model id %q", got["COPILOT_PROVIDER_MODEL_ID"])
+	}
+	if got["COPILOT_PROVIDER_WIRE_MODEL"] != "gpt-oss:20b" {
+		t.Fatalf("unexpected wire model %q", got["COPILOT_PROVIDER_WIRE_MODEL"])
+	}
+}
+
+func TestAgentCommandCopilotPassesThroughArgs(t *testing.T) {
+	_, args, _, err := agentCommand("microsoft-copilot", Model{
+		ProviderID: "lmstudio",
+		ID:         "openai/gpt-oss-20b",
+		Name:       "openai/gpt-oss-20b",
+		BaseURL:    "http://localhost:1234/v1",
+	}, []string{"--model", "override"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(args) != 2 || args[0] != "--model" || args[1] != "override" {
+		t.Fatalf("unexpected args %#v", args)
+	}
+}
+
 func TestFilterModelsKeepsSlashesInsideModelID(t *testing.T) {
 	models, err := filterModels([]Model{{
 		ProviderID: "lmstudio",
