@@ -1,14 +1,14 @@
-  # ai_config Go CLI Design
+  # lmwire Go CLI Design
 
   ## Summary
 
-  Build ai_config, a Go CLI that discovers local model servers and writes managed config for Pi, Codex, Claude Code, and OpenCode so local Ollama and LM Studio models are selectable and
+  Build lmwire, a Go CLI that discovers local model servers and writes managed config for Pi, Codex, Claude Code, and OpenCode so local Ollama and LM Studio models are selectable and
   launchable from agent TUIs.
 
   Chosen v1 defaults:
 
   - Use HTTP discovery first.
-  - Preserve user config and upsert only ai_config-managed entries.
+  - Preserve user config and upsert only lmwire-managed entries.
   - Create backups before every write.
   - Support all four targets: Pi, Codex, Claude Code, OpenCode.
 
@@ -25,39 +25,39 @@
   ## CLI Skeleton
 
   # Discover local providers and models
-  ai_config discover
-  ai_config discover --provider ollama
-  ai_config discover --provider lmstudio
-  ai_config discover --json
+  lmwire discover
+  lmwire discover --provider ollama
+  lmwire discover --provider lmstudio
+  lmwire discover --json
 
   # Write managed config to all supported agents
-  ai_config apply
-  ai_config apply --target pi,codex,claude,opencode
-  ai_config apply --provider ollama,lmstudio
-  ai_config apply --dry-run
-  ai_config apply --backup-dir ~/.ai_config/backups
+  lmwire apply
+  lmwire apply --target pi,codex,claude,opencode
+  lmwire apply --provider ollama,lmstudio
+  lmwire apply --dry-run
+  lmwire apply --backup-dir ~/.lmwire/backups
 
   # Show generated config without writing
-  ai_config render --target pi
-  ai_config render --target codex --provider lmstudio
-  ai_config render --target claude --model qwen2.5-coder:7b
-  ai_config render --format json
+  lmwire render --target pi
+  lmwire render --target codex --provider lmstudio
+  lmwire render --target claude --model qwen2.5-coder:7b
+  lmwire render --format json
 
   # Launch an agent with local-model environment/config
-  ai_config run codex --model ollama/qwen2.5-coder:7b
-  ai_config run claude --model ollama/qwen3.5
-  ai_config run pi --model lmstudio/qwen/qwen3-coder
-  ai_config run opencode --model lmstudio/google/gemma-3n-e4b -- --help
+  lmwire run codex --model ollama/qwen2.5-coder:7b
+  lmwire run claude --model ollama/qwen3.5
+  lmwire run pi --model lmstudio/qwen/qwen3-coder
+  lmwire run opencode --model lmstudio/google/gemma-3n-e4b -- --help
 
   # Emit shell exports for sourcing
-  ai_config env claude --model ollama/qwen3.5
-  ai_config env codex --model lmstudio/qwen/qwen3-coder
-  eval "$(ai_config env claude --model ollama/qwen3.5 --shell bash)"
-  ai_config env --shell fish
+  lmwire env claude --model ollama/qwen3.5
+  lmwire env codex --model lmstudio/qwen/qwen3-coder
+  eval "$(lmwire env claude --model ollama/qwen3.5 --shell bash)"
+  lmwire env --shell fish
 
   Global flags:
 
-  --config ~/.config/ai_config/config.toml
+  --config ~/.config/lmwire/config.toml
   --provider ollama,lmstudio
   --target pi,codex,claude,opencode
   --model <provider>/<model-id>
@@ -124,16 +124,16 @@
   Codex:
 
   - Write ~/.codex/config.toml.
-  - Avoid overriding reserved built-in provider IDs ollama and lmstudio; use custom IDs like ai_config_ollama and ai_config_lmstudio.
+  - Avoid overriding reserved built-in provider IDs ollama and lmstudio; use custom IDs like lmwire_ollama and lmwire_lmstudio.
   - Add profiles per discovered model:
-      - ai_config_ollama_qwen2_5_coder_7b
-      - ai_config_lmstudio_google_gemma_3n_e4b
+      - lmwire_ollama_qwen2_5_coder_7b
+      - lmwire_lmstudio_google_gemma_3n_e4b
   - Use custom provider base_url and default Responses API behavior where compatible.
 
   Claude Code:
 
   - Prefer env-based integration instead of config-file mutation.
-  - ai_config env claude emits:
+  - lmwire env claude emits:
       - ANTHROPIC_BASE_URL
       - ANTHROPIC_API_KEY
       - ANTHROPIC_MODEL
@@ -145,7 +145,7 @@
 
   - Write user OpenCode config JSON/JSONC with provider entries and model IDs.
   - Use model references as provider_id/model_id.
-  - Preserve existing provider config and only upsert ai_config providers/models.
+  - Preserve existing provider config and only upsert lmwire providers/models.
 
   ## Implementation Plan
 

@@ -2,7 +2,7 @@ package main
 
 import "time"
 
-const managedMarker = "ai_config managed"
+const managedMarker = "lmwire managed"
 
 type Model struct {
 	ProviderID string            `json:"provider_id"`
@@ -18,6 +18,7 @@ type Provider struct {
 	DisplayName string
 	BaseURL     string
 	ListURL     string
+	NativeURL   string
 	Kind        string
 }
 

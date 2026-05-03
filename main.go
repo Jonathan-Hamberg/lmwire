@@ -7,13 +7,14 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
 
 func main() {
 	if err := runCLI(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "ai_config:", err)
+		fmt.Fprintln(os.Stderr, "lmwire:", err)
 		os.Exit(1)
 	}
 }
@@ -155,7 +156,7 @@ func cmdApply(args []string) error {
 		return err
 	}
 	if len(envs) > 0 {
-		fmt.Println("claude uses environment variables; source these or use ai_config run claude:")
+		fmt.Println("claude uses environment variables; source these or use lmwire run claude:")
 		printEnv(envs, "bash")
 	}
 	return nil
@@ -195,7 +196,7 @@ func cmdEnv(args []string) error {
 	case "codex":
 		model := pickDefaultModel(models)
 		printEnv([]EnvVar{
-			{Name: "OPENAI_API_KEY", Value: "ai_config-local"},
+			{Name: "OPENAI_API_KEY", Value: "lmwire-local"},
 			{Name: "OPENAI_BASE_URL", Value: model.BaseURL},
 			{Name: "CODEX_OSS_BASE_URL", Value: model.BaseURL},
 		}, *shell)
@@ -215,12 +216,25 @@ func cmdRun(args []string) error {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	providers := fs.String("provider", "", "comma-separated providers: ollama,lmstudio")
 	modelRef := fs.String("model", "", "model ref provider/model-id")
+	contextWindow := fs.Int("context-window", 0, "override Codex model_context_window for local models")
 	timeout := fs.Duration("timeout", 2*time.Second, "discovery timeout")
 	if err := fs.Parse(flagArgs); err != nil {
 		return err
 	}
+	runArgs := append([]string(nil), fs.Args()...)
+	if *modelRef == "" && len(runArgs) > 0 && strings.Contains(runArgs[0], "/") {
+		*modelRef = runArgs[0]
+		runArgs = runArgs[1:]
+	}
+	trailing = append(runArgs, trailing...)
+	providerIDs := splitCSV(*providers)
+	if len(providerIDs) == 0 {
+		if providerID := providerFromModelRef(*modelRef); providerID != "" {
+			providerIDs = []string{providerID}
+		}
+	}
 	models, errs := discoverModels(context.Background(), DiscoverOptions{
-		Providers: splitCSV(*providers),
+		Providers: providerIDs,
 		Timeout:   *timeout,
 	})
 	for _, err := range errs {
@@ -233,38 +247,161 @@ func cmdRun(args []string) error {
 	if len(models) == 0 {
 		return fmt.Errorf("no models discovered")
 	}
-	return launchAgent(agent, pickDefaultModel(models), trailing)
+	model := pickDefaultModel(models)
+	if err := prepareAgentRun(agent, model, *contextWindow, *timeout); err != nil {
+		return err
+	}
+	return launchAgent(agent, model, trailing)
+}
+
+func prepareAgentRun(agent string, model Model, contextWindow int, timeout time.Duration) error {
+	switch agent {
+	case "claude":
+		if model.ProviderID == "ollama" {
+			return requireOllamaAnthropicCompatibility(context.Background(), model, timeout)
+		}
+		return nil
+	case "pi":
+		patch, err := renderPi([]Model{model})
+		if err != nil {
+			return err
+		}
+		return applyPatches([]FilePatch{patch}, "", false)
+	case "codex":
+		patch, err := renderCodexWithContext([]Model{model}, contextWindow)
+		if err != nil {
+			return err
+		}
+		return applyPatches([]FilePatch{patch}, "", false)
+	default:
+		return nil
+	}
+}
+
+func defaultCodexContextWindow() int {
+	value := os.Getenv("LMWIRE_CODEX_CONTEXT_WINDOW")
+	if value == "" {
+		return 4096
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 1 {
+		return 4096
+	}
+	return parsed
+}
+
+func codexContextWindowForModel(model Model, override int) int {
+	if override > 0 {
+		return override
+	}
+	for _, key := range []string{"context_length", "max_context_length"} {
+		if value := model.Metadata[key]; value != "" {
+			parsed, err := strconv.Atoi(value)
+			if err == nil && parsed > 0 {
+				return parsed
+			}
+		}
+	}
+	return defaultCodexContextWindow()
 }
 
 func launchAgent(agent string, model Model, args []string) error {
+	cmdName, cmdArgs, envVars, err := agentCommand(agent, model, args)
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command(cmdName, cmdArgs...)
+	cmd.Env = appendEnv(os.Environ(), envVars)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func agentCommand(agent string, model Model, args []string) (string, []string, []EnvVar, error) {
 	var cmdName string
 	var cmdArgs []string
-	env := os.Environ()
+	var envVars []EnvVar
 	switch agent {
 	case "claude":
 		cmdName = "claude"
-		env = appendEnv(env, renderClaudeEnv(model))
+		cmdArgs = args
+		if !hasFlag(args, "--model") && !hasFlag(args, "-m") {
+			cmdArgs = append([]string{"--model", model.ID}, args...)
+		}
+		envVars = renderClaudeEnv(model)
 	case "codex":
 		cmdName = "codex"
-		cmdArgs = append([]string{"--profile", "ai_config_" + sanitizeID(model.ProviderID+"_"+model.ID)}, args...)
+		cmdArgs = append([]string{"--profile", "lmwire_" + sanitizeID(model.ProviderID+"_"+model.ID)}, args...)
 	case "pi":
 		cmdName = "pi"
 		cmdArgs = append([]string{"--model", model.ProviderID + "/" + model.ID}, args...)
 	case "opencode":
 		cmdName = "opencode"
-		cmdArgs = append([]string{"--model", "ai_config_" + sanitizeID(model.ProviderID) + "/" + model.ID}, args...)
+		cmdArgs = append([]string{"--model", openCodeModelRef(model)}, args...)
+		envVars = append(envVars, EnvVar{Name: "OPENCODE_CONFIG_CONTENT", Value: openCodeInlineConfig(model)})
 	default:
-		return fmt.Errorf("unknown agent %q", agent)
+		return "", nil, nil, fmt.Errorf("unknown agent %q", agent)
 	}
-	if cmdName == "claude" {
-		cmdArgs = args
+	return cmdName, cmdArgs, envVars, nil
+}
+
+func hasFlag(args []string, names ...string) bool {
+	want := map[string]bool{}
+	for _, name := range names {
+		want[name] = true
 	}
-	cmd := exec.Command(cmdName, cmdArgs...)
-	cmd.Env = env
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	for _, arg := range args {
+		if want[arg] {
+			return true
+		}
+		if idx := strings.IndexByte(arg, '='); idx > 0 && want[arg[:idx]] {
+			return true
+		}
+	}
+	return false
+}
+
+func openCodeModelRef(model Model) string {
+	return openCodeProviderID(model.ProviderID) + "/" + model.ID
+}
+
+func openCodeProviderID(providerID string) string {
+	return sanitizeID(providerID)
+}
+
+func openCodeInlineConfig(model Model) string {
+	providerID := openCodeProviderID(model.ProviderID)
+	data := map[string]any{
+		"$schema": "https://opencode.ai/config.json",
+		"model":   providerID + "/" + model.ID,
+		"provider": map[string]any{
+			providerID: map[string]any{
+				"npm":     "@ai-sdk/openai-compatible",
+				"name":    openCodeProviderName(model.ProviderID),
+				"options": map[string]any{"baseURL": model.BaseURL},
+				"models": map[string]any{
+					model.ID: map[string]any{"name": model.Name},
+				},
+			},
+		},
+	}
+	out, err := json.Marshal(data)
+	if err != nil {
+		return "{}"
+	}
+	return string(out)
+}
+
+func openCodeProviderName(providerID string) string {
+	switch providerID {
+	case "lmstudio":
+		return "LM Studio (local)"
+	case "ollama":
+		return "Ollama (local)"
+	default:
+		return providerID + " (local)"
+	}
 }
 
 func filterModels(models []Model, ref string) ([]Model, error) {
@@ -285,6 +422,14 @@ func filterModels(models []Model, ref string) ([]Model, error) {
 		return nil, fmt.Errorf("model %q was not discovered", ref)
 	}
 	return out, nil
+}
+
+func providerFromModelRef(ref string) string {
+	provider, _, ok := strings.Cut(ref, "/")
+	if !ok {
+		return ""
+	}
+	return provider
 }
 
 func splitCSV(value string) []string {
@@ -352,14 +497,14 @@ func errorStrings(errs []error) []string {
 }
 
 func printUsage() {
-	fmt.Print(`ai_config configures local AI models for agent TUIs.
+	fmt.Print(`lmwire configures local AI models for agent TUIs.
 
 Usage:
-  ai_config discover [--provider ollama,lmstudio] [--json]
-  ai_config render [--target pi,codex,claude,opencode] [--model provider/model]
-  ai_config apply [--target pi,codex,claude,opencode] [--dry-run]
-  ai_config env [claude|codex] [--model provider/model] [--shell bash|fish]
-  ai_config run <codex|claude|pi|opencode> [--model provider/model] -- [agent args...]
+  lmwire discover [--provider ollama,lmstudio] [--json]
+  lmwire render [--target pi,codex,claude,opencode] [--model provider/model]
+  lmwire apply [--target pi,codex,claude,opencode] [--dry-run]
+  lmwire env [claude|codex] [--model provider/model] [--shell bash|fish]
+  lmwire run <codex|claude|pi|opencode> [--model provider/model] -- [agent args...]
 
 `)
 }

@@ -1,6 +1,6 @@
-# ai_config
+# lmwire
 
-`ai_config` is a Go CLI for wiring local model servers into agent TUIs. It discovers local Ollama and LM Studio models, renders managed config for Pi, Codex, Claude Code, and OpenCode, and can launch agents with the right local-model environment.
+`lmwire` is a Go CLI for wiring local model servers into agent TUIs. It discovers local Ollama and LM Studio models, renders managed config for Pi, Codex, Claude Code, and OpenCode, and can launch agents with the right local-model environment.
 
 ## Build
 
@@ -11,9 +11,9 @@ go build ./...
 ## Discover Models
 
 ```bash
-ai_config discover
-ai_config discover --provider ollama
-ai_config discover --provider lmstudio --json
+lmwire discover
+lmwire discover --provider ollama
+lmwire discover --provider lmstudio --json
 ```
 
 Discovery is HTTP-first:
@@ -21,17 +21,17 @@ Discovery is HTTP-first:
 - Ollama: `http://localhost:11434/api/tags`
 - LM Studio: `http://localhost:1234/v1/models`
 
-If Ollama HTTP discovery fails, `ai_config` falls back to `ollama list`.
+If Ollama HTTP discovery fails, `lmwire` falls back to `ollama list`.
 
 ## Apply Config
 
 ```bash
-ai_config apply --dry-run
-ai_config apply
-ai_config apply --target pi,codex,opencode
+lmwire apply --dry-run
+lmwire apply
+lmwire apply --target pi,codex,opencode
 ```
 
-The apply command preserves existing files and upserts `ai_config` managed entries. Existing files are backed up under `~/.ai_config/backups` before writes.
+The apply command preserves existing files and upserts `lmwire` managed entries. Existing files are backed up under `~/.lmwire/backups` before writes.
 
 Target files:
 
@@ -43,34 +43,40 @@ Target files:
 ## Render Without Writing
 
 ```bash
-ai_config render --target pi
-ai_config render --target codex --provider lmstudio
-ai_config render --target claude --model ollama/qwen3.5
+lmwire render --target pi
+lmwire render --target codex --provider lmstudio
+lmwire render --target claude --model ollama/qwen3.5
 ```
 
 ## Shell Environment
 
 ```bash
-ai_config env claude --model ollama/qwen3.5
-eval "$(ai_config env claude --model ollama/qwen3.5 --shell bash)"
-ai_config env codex --model lmstudio/google/gemma-3n-e4b
+lmwire env claude --model ollama/qwen3.5
+eval "$(lmwire env claude --model ollama/qwen3.5 --shell bash)"
+lmwire env codex --model lmstudio/google/gemma-3n-e4b
 ```
 
-Claude Code exports include `ANTHROPIC_BASE_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, and custom model picker variables.
+Claude Code exports include `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY=""`, `ANTHROPIC_MODEL`, and custom model picker variables.
+For LM Studio, `ANTHROPIC_BASE_URL` points at `http://localhost:1234` so Claude Code uses LM Studio's Anthropic-compatible `/v1/messages` endpoint.
 
 ## Launch Agents
 
 ```bash
-ai_config run claude --model ollama/qwen3.5 -- -p "summarize this repo"
-ai_config run codex --model lmstudio/google/gemma-3n-e4b
-ai_config run opencode --model lmstudio/google/gemma-3n-e4b
+lmwire run claude --model ollama/qwen3.5 -- -p "summarize this repo"
+lmwire run codex --model lmstudio/google/gemma-3n-e4b
+lmwire run codex lmstudio/openai/gpt-oss-20b --context-window 8192
+lmwire run opencode --model lmstudio/google/gemma-3n-e4b
+lmwire run opencode lmstudio/google/gemma-3n-e4b
 ```
 
-Run `ai_config apply` before launching Codex, Pi, or OpenCode so their config files contain the generated provider/model entries.
+Run `lmwire apply` before launching Codex so its config file contains the generated provider/model entries.
+For Pi, `run` writes the selected model into `~/.pi/agent/models.json` before launch.
+For OpenCode, `run` also passes `OPENCODE_CONFIG_CONTENT` so the selected local provider/model is available even if you have not run `apply` yet.
+For Codex, LM Studio models use the loaded instance context length reported by `GET /api/v1/models` when available. Use `--context-window` to override it, or `LMWIRE_CODEX_CONTEXT_WINDOW` as the final fallback.
 
 ## Safety Notes
 
 - `--dry-run` reports planned writes without changing files.
 - Existing files are backed up before writes.
-- Codex uses custom provider IDs such as `ai_config_ollama` instead of reserved built-in provider IDs.
+- Codex uses custom provider IDs such as `lmwire_ollama` instead of reserved built-in provider IDs.
 - OpenCode JSONC comments are not preserved in this first implementation because the CLI uses Go's standard JSON parser.

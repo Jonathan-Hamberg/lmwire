@@ -74,7 +74,7 @@ func renderPi(models []Model) (FilePatch, error) {
 				"supportsReasoningEffort": false,
 			},
 			"models": piModelList(providerModels),
-			"x-ai_config": map[string]any{
+			"x-lmwire": map[string]any{
 				"managed": true,
 			},
 		}
@@ -106,6 +106,10 @@ func piModelList(models []Model) []map[string]any {
 }
 
 func renderCodex(models []Model) (FilePatch, error) {
+	return renderCodexWithContext(models, defaultCodexContextWindow())
+}
+
+func renderCodexWithContext(models []Model, contextWindow int) (FilePatch, error) {
 	path := defaultConfigPath("codex")
 	before := readExisting(path)
 	base := stripManagedTomlBlock(string(before))
@@ -124,16 +128,19 @@ func renderCodex(models []Model) (FilePatch, error) {
 		if len(providerModels) == 0 {
 			continue
 		}
-		codexProviderID := "ai_config_" + sanitizeID(providerID)
+		codexProviderID := "lmwire_" + sanitizeID(providerID)
 		fmt.Fprintf(&buf, "\n[model_providers.%s]\n", codexProviderID)
-		fmt.Fprintf(&buf, "name = %q\n", "ai_config "+providerID)
+		fmt.Fprintf(&buf, "name = %q\n", "lmwire "+providerID)
 		fmt.Fprintf(&buf, "base_url = %q\n", providerModels[0].BaseURL)
 		fmt.Fprintf(&buf, "requires_openai_auth = false\n")
 		for _, model := range sortedModelCopy(providerModels) {
-			profile := "ai_config_" + sanitizeID(providerID+"_"+model.ID)
+			profile := "lmwire_" + sanitizeID(providerID+"_"+model.ID)
 			fmt.Fprintf(&buf, "\n[profiles.%s]\n", profile)
 			fmt.Fprintf(&buf, "model_provider = %q\n", codexProviderID)
 			fmt.Fprintf(&buf, "model = %q\n", model.ID)
+			if window := codexContextWindowForModel(model, contextWindow); window > 0 {
+				fmt.Fprintf(&buf, "model_context_window = %d\n", window)
+			}
 		}
 	}
 	buf.WriteString("\n# ")
@@ -146,13 +153,15 @@ func renderClaudeEnv(model Model) []EnvVar {
 	if model.ID == "" {
 		return nil
 	}
-	baseURL := model.BaseURL
-	if model.ProviderID == "ollama" {
-		baseURL = strings.TrimSuffix(baseURL, "/v1")
+	baseURL := strings.TrimSuffix(model.BaseURL, "/v1")
+	authToken := model.ProviderID
+	if authToken == "" {
+		authToken = "lmwire-local"
 	}
 	return []EnvVar{
 		{Name: "ANTHROPIC_BASE_URL", Value: baseURL},
-		{Name: "ANTHROPIC_API_KEY", Value: "ai_config-local"},
+		{Name: "ANTHROPIC_AUTH_TOKEN", Value: authToken},
+		{Name: "ANTHROPIC_API_KEY", Value: ""},
 		{Name: "ANTHROPIC_MODEL", Value: model.ID},
 		{Name: "ANTHROPIC_CUSTOM_MODEL_OPTION", Value: model.ID},
 		{Name: "ANTHROPIC_CUSTOM_MODEL_OPTION_NAME", Value: model.Name},
@@ -177,7 +186,7 @@ func renderOpenCode(models []Model) (FilePatch, error) {
 		if len(providerModels) == 0 {
 			continue
 		}
-		opencodeProviderID := "ai_config_" + sanitizeID(providerID)
+		opencodeProviderID := openCodeProviderID(providerID)
 		modelMap := map[string]any{}
 		for _, model := range sortedModelCopy(providerModels) {
 			modelMap[model.ID] = map[string]any{
@@ -188,7 +197,7 @@ func renderOpenCode(models []Model) (FilePatch, error) {
 			}
 		}
 		providers[opencodeProviderID] = map[string]any{
-			"name":    "ai_config " + providerID,
+			"name":    openCodeProviderName(providerID),
 			"npm":     "@ai-sdk/openai-compatible",
 			"options": map[string]any{"baseURL": providerModels[0].BaseURL},
 			"models":  modelMap,
@@ -239,7 +248,7 @@ func writePatch(patch FilePatch, backupDir string) error {
 
 func backupFile(path string, data []byte, backupDir string) error {
 	if backupDir == "" {
-		backupDir = expandPath("~/.ai_config/backups")
+		backupDir = expandPath("~/.lmwire/backups")
 	}
 	if err := os.MkdirAll(backupDir, 0o755); err != nil {
 		return err
